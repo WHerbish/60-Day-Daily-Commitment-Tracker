@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-import os, signal, json, calendar
+import os, signal, json, time
 from datetime import date
 
 app = Flask(__name__)
@@ -16,32 +16,12 @@ def save_config(data):
     with open(CONFIG_FILE, "w") as f:
         json.dump(data, f)
 
-def build_buttons_html(year, month):
-    today = date.today()
-    num_days = calendar.monthrange(year, month)[1]
-    html = ""
-    for day in range(1, num_days + 1):
-        d = date(year, month, day)
-        abbr = d.strftime("%a")
-        col = ((day - 1) % 7) + 1
-        row = ((day - 1) // 7) + 1
-        is_today = (d == today)
-        today_class = ' today' if is_today else ''
-        html += f"""
-        <button id="day-{day}" class="{today_class.strip()}" onclick="selectDay({day})" style="grid-column: {col}; grid-row: {row};">
-            <span class="abbr">{abbr}</span>
-            <span class="daynum">{day}</span>
-            <div class="day-progress-bar" style="visibility:hidden;"><div class="day-progress-fill"></div></div>
-        </button>"""
-    return html
+def find_task(tasks, task_id):
+    return next((t for t in tasks if t["id"] == task_id), None)
 
 @app.route("/")
 def home():
-    today = date.today()
-    year, month = today.year, today.month
-    month_name = today.strftime("%B %Y")
     config = load_config()
-    buttons_html = build_buttons_html(year, month)
     saved_name = config.get("name", "")
 
     return """
@@ -57,171 +37,33 @@ def home():
             margin: 0;
             font-family: Helvetica, Arial, sans-serif;
         }
-        .calendar-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 70px);
-            grid-template-rows: repeat(5, 70px);
-            gap: 8px;
-            margin-bottom: 0;
-            border: none;
-            outline: none;
-        }
-        .calendar-grid button {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 70px;
-            width: 70px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            box-shadow: 1px 2px 4px rgba(0,0,0,0.2);
-            font-family: Helvetica, Arial, sans-serif;
-            padding: 0;
-            background-color: white;
-        }
-        .calendar-grid button:hover {
-            box-shadow: 2px 3px 6px rgba(0,0,0,0.3);
-            border: 2px solid #C8A2C8;
-            transform: translateY(-1px);
-        }
-        .calendar-grid button.selected {
-            border: 4px solid #C8A2C8;
-        }
-        .calendar-grid button.today:not(:hover):not(.selected) {
-            border: 3px solid transparent;
-            border-image: repeating-linear-gradient(
-                45deg,
-                #C8A2C8 0px, #C8A2C8 4px,
-                white 4px, white 8px
-            ) 1;
-        }
-        .abbr {
-            font-size: 11px;
-            color: #999;
-        }
-        .daynum {
-            font-size: 20px;
-        }
-        .day-progress-bar {
-            width: 80%;
-            height: 4px;
-            background: #e0e0e0;
-            border-radius: 2px;
-            margin-top: 4px;
-            overflow: hidden;
-        }
-        .day-progress-fill {
-            height: 100%;
-            width: 0%;
-            background: #C8A2C8;
-            border-radius: 2px;
-            transition: width 0.3s;
-        }
         #quitBtn {
+            position: fixed;
+            bottom: 16px;
+            right: 20px;
+            background: none;
+            border: none;
             font-family: Helvetica, Arial, sans-serif;
-            background: #ffffff;
-            border: none;
-            padding: 10px 28px;
-            font-size: 16px;
+            font-size: 15px;
+            color: #777;
             cursor: pointer;
-            box-shadow: 1px 2px 4px rgba(0,0,0,0.2);
-            border-radius: 4px;
-            width: 120px;
-        }
-        #quitBtn:hover {
-            box-shadow: 2px 3px 6px rgba(0,0,0,0.3);
-        }
-        .panel {
-            background: #ffffff;
-            border: none;
-            border-radius: 8px;
-            padding: 20px 24px;
-            box-shadow: 2px 4px 12px rgba(0,0,0,0.1);
-            display: inline-flex;
-            flex-direction: column;
-            align-items: flex-start;
-            margin-bottom: 20px;
-        }
-        .month-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            width: 100%;
-            margin: 0 0 8px 0;
-        }
-        .month-label {
-            font-size: 18px;
-            font-weight: bold;
-            color: #555;
-            margin: 0;
-        }
-        .nav-btn {
-            background: white;
-            border: none;
-            border-radius: 4px;
-            width: 28px;
-            height: 28px;
-            cursor: pointer;
-            font-size: 14px;
-            box-shadow: 1px 2px 4px rgba(0,0,0,0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
             padding: 0;
         }
-        .nav-btn:hover {
-            box-shadow: 2px 3px 6px rgba(0,0,0,0.3);
-            border: 1px solid #C8A2C8;
-            transform: translateY(-1px);
-        }
+        #quitBtn:hover { color: #555; }
         .greeting {
             font-size: 15px;
             color: #777;
             margin: 6px 0 16px 0;
         }
-        .panel hr {
-            width: 100%;
-            border: none;
-            border-top: 2px solid #f9f9f9;
-            margin: 0 0 16px 0;
-        }
-        .panels-row {
+        .add-row {
             display: flex;
-            align-items: flex-start;
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-        .tasks-panel {
-            background: #ffffff;
-            border: none;
-            border-radius: 8px;
-            padding: 20px 24px;
-            box-shadow: 2px 4px 12px rgba(0,0,0,0.1);
-            display: flex;
-            flex-direction: column;
-            width: 330px;
-            align-self: stretch;
-            box-sizing: border-box;
-        }
-        .tasks-label {
-            font-size: 18px;
-            font-weight: bold;
-            color: #555;
-            margin: 0 0 8px 0;
-        }
-        .tasks-panel hr {
-            width: 100%;
-            border: none;
-            border-top: 2px solid #f9f9f9;
-            margin: 0 0 16px 0;
-        }
-        .add-task-row {
-            display: none;
             align-items: center;
             gap: 10px;
-            margin-top: 12px;
+            margin-bottom: 24px;
+            cursor: pointer;
+        }
+        .add-row:hover .add-btn {
+            box-shadow: 2px 3px 6px rgba(0,0,0,0.3);
         }
         .add-btn {
             width: 28px;
@@ -231,6 +73,7 @@ def home():
             border: none;
             color: white;
             font-size: 20px;
+            font-weight: bold;
             line-height: 1;
             cursor: pointer;
             display: flex;
@@ -245,38 +88,95 @@ def home():
             transform: translateY(-1px);
         }
         .add-task-label {
-            font-size: 13px;
-            color: #888;
+            font-size: 15px;
+            color: #777;
         }
-        .task-item {
+        .task-cards {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 20px;
+            max-width: calc(560px * 3 + 16px * 2);
+        }
+        .task-card {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 20px 24px;
+            box-shadow: 2px 4px 12px rgba(0,0,0,0.1);
+            width: 560px;
+            box-sizing: border-box;
+        }
+        .task-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .tick-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-top: 10px;
-        }
-        .task-item input[type="checkbox"] {
-            accent-color: #C8A2C8;
-            width: 16px;
-            height: 16px;
-            cursor: pointer;
+            justify-content: center;
             flex-shrink: 0;
         }
-        .task-item label {
-            font-size: 13px;
-            color: #444;
-            flex: 1;
+        .task-card-title {
+            font-size: 15px;
+            font-weight: bold;
+            color: #555;
+            margin: 0 0 4px 0;
+            outline: none;
+            border-radius: 3px;
+            cursor: text;
+            word-break: break-word;
+        }
+        .task-card-title:focus {
+            background: #f0f0f0;
+            padding: 1px 5px;
+            margin-left: -5px;
+        }
+        .task-card-date {
+            font-size: 12px;
+            color: #777;
+            margin: 0;
         }
         .delete-btn {
             background: none;
             border: none;
             cursor: pointer;
-            font-size: 15px;
-            color: #bbb;
+            font-size: 18px;
+            color: #555;
             padding: 0;
             line-height: 1;
-            flex-shrink: 0;
         }
-        .delete-btn:hover { color: #e57373; }
+        .task-card hr {
+            border: none;
+            border-top: 1px solid #e8e8e8;
+            margin: 0 0 16px 0;
+        }
+        .days-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 6px;
+        }
+        .day-btn {
+            aspect-ratio: 1;
+            border: none;
+            border-radius: 4px;
+            cursor: default;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            line-height: 1.3;
+            font-family: Helvetica, Arial, sans-serif;
+        }
         .modal-overlay {
             display: none;
             position: fixed;
@@ -309,7 +209,7 @@ def home():
             flex-direction: column;
             gap: 4px;
         }
-        .modal input[type="text"], .modal input[type="number"] {
+        .modal input[type="text"] {
             border: 1px solid #ccc;
             border-radius: 4px;
             padding: 6px 8px;
@@ -318,6 +218,26 @@ def home():
             outline: none;
         }
         .modal input:focus { border-color: #C8A2C8; }
+        .colour-label {
+            font-size: 13px;
+            color: #666;
+            margin: 0;
+        }
+        .colour-swatches {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .swatch {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+        .swatch.selected { border-color: #444; }
         .modal-btns {
             display: flex;
             justify-content: flex-end;
@@ -338,34 +258,24 @@ def home():
             border-color: #C8A2C8;
         }
     </style>
-    <h1>Daily Commitment Tracker</h1>
+    <h1>60-Day Daily Commitment Tracker</h1>
     <p id="greeting" class="greeting"></p>
-    <div class="panels-row">
-        <div class="panel" style="margin-bottom:0;">
-            <div class="month-header">
-                <p id="month-label" class="month-label">""" + month_name + """</p>
-                <div style="display:flex; gap:6px;">
-                    <button class="nav-btn" onclick="changeMonth(-1)">&lt;</button>
-                    <button class="nav-btn" onclick="goToToday()" style="width:auto; padding:0 8px; font-size:12px; font-weight:bold;">Today</button>
-                    <button class="nav-btn" onclick="changeMonth(1)">&gt;</button>
-                </div>
-            </div>
-            <hr>
-            <div id="calendar-grid" class="calendar-grid">""" + buttons_html + """
-            </div>
-        </div>
-        <div class="tasks-panel">
-            <p class="tasks-label">Tasks</p>
-            <hr>
-            <p id="selected-date" style="font-size:14px; color:#C8A2C8; margin:0; font-weight:bold">Select a date.</p>
-            <div id="task-list"></div>
-            <div class="add-task-row">
-                <button class="add-btn" onclick="openModal()">+</button>
-                <span class="add-task-label">Add Task</span>
+    <div class="task-cards" id="task-cards"></div>
+    <div class="add-row" onclick="openModal()">
+        <button class="add-btn">+</button>
+        <span class="add-task-label">Add Task</span>
+    </div>
+    <button id="quitBtn" onclick="quit()">Quit</button>
+
+    <div class="modal-overlay" id="confirm-overlay">
+        <div class="modal">
+            <h3 style="text-align:center;">Delete this Task?</h3>
+            <div class="modal-btns" style="justify-content:center;">
+                <button class="primary" id="confirm-yes">Yes</button>
+                <button class="secondary" onclick="closeConfirm()">No</button>
             </div>
         </div>
     </div>
-    <button id="quitBtn" onclick="quit()">Quit</button>
 
     <div class="modal-overlay" id="modal-overlay">
         <div class="modal">
@@ -373,69 +283,59 @@ def home():
             <label>Describe your Task:
                 <input type="text" id="task-desc" placeholder="e.g. Go for a run">
             </label>
-            <label>How many days will you do this:
-                <input type="number" id="task-days" placeholder="e.g. 7" min="1">
-            </label>
+            <p class="colour-label">Choose a colour:</p>
+            <div class="colour-swatches" id="colour-swatches">
+                <div class="swatch" data-color="#8BAFD6" style="background:#8BAFD6"></div>
+                <div class="swatch" data-color="#F090A8" style="background:#F090A8"></div>
+                <div class="swatch" data-color="#EDE068" style="background:#EDE068"></div>
+                <div class="swatch" data-color="#5AAA8E" style="background:#5AAA8E"></div>
+                <div class="swatch" data-color="#F05898" style="background:#F05898"></div>
+                <div class="swatch" data-color="#9868C8" style="background:#9868C8"></div>
+                <div class="swatch" data-color="#80C0E8" style="background:#80C0E8"></div>
+                <div class="swatch" data-color="#F0A068" style="background:#F0A068"></div>
+            </div>
             <div class="modal-btns">
-                <button onclick="closeModal()">Cancel</button>
                 <button class="primary" onclick="submitTask()">Add</button>
+                <button onclick="closeModal()">Cancel</button>
             </div>
         </div>
     </div>
     <script>
-        let currentYear = """ + str(year) + """;
-        let currentMonth = """ + str(month) + """;
+        const MONTH_ABBRS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        const DAY_NAMES   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        const TICK_SVG    = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polyline points="2.5,8.5 6.5,12.5 13.5,4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>`;
 
-        const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-        const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
-        let selectedYear = null, selectedMonth = null, selectedDay = null;
-
-        function selectDay(day) {
-            document.querySelectorAll('#calendar-grid button').forEach(b => b.classList.remove('selected'));
-            document.getElementById('day-' + day).classList.add('selected');
-            selectedYear = currentYear;
-            selectedMonth = currentMonth;
-            selectedDay = day;
-            const d = new Date(currentYear, currentMonth - 1, day);
-            const label = `${dayNames[d.getDay()]}, ${monthNames[currentMonth - 1]} ${day}, ${currentYear}`;
-            document.getElementById('selected-date').textContent = label;
-            document.querySelector('.add-task-row').style.display = 'flex';
-            loadTasks();
+        async function post(url, body = {}) {
+            await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
         }
 
-        function restoreSelection() {
-            if (selectedDay && selectedYear === currentYear && selectedMonth === currentMonth) {
-                document.getElementById('day-' + selectedDay).classList.add('selected');
-            }
+        function lightenColor(hex, factor) {
+            const r = parseInt(hex.slice(1,3), 16);
+            const g = parseInt(hex.slice(3,5), 16);
+            const b = parseInt(hex.slice(5,7), 16);
+            return `rgb(${Math.round(r+(255-r)*factor)},${Math.round(g+(255-g)*factor)},${Math.round(b+(255-b)*factor)})`;
         }
 
-        async function goToToday() {
-            const today = new Date();
-            const todayYear = today.getFullYear();
-            const todayMonth = today.getMonth() + 1;
-            const todayDay = today.getDate();
-            if (currentYear !== todayYear || currentMonth !== todayMonth) {
-                currentYear = todayYear;
-                currentMonth = todayMonth;
-                const res = await fetch(`/month?year=${currentYear}&month=${currentMonth}`);
-                const data = await res.json();
-                document.getElementById('month-label').textContent = data.month_name;
-                document.getElementById('calendar-grid').innerHTML = data.buttons_html;
-            }
-            selectDay(todayDay);
+        function getDayNum(createdStr) {
+            const [y, m, d] = createdStr.split('-').map(Number);
+            const created = new Date(y, m - 1, d);
+            const today   = new Date();
+            today.setHours(0, 0, 0, 0);
+            created.setHours(0, 0, 0, 0);
+            return Math.floor((today - created) / 86400000) + 1;
         }
 
-        async function changeMonth(direction) {
-            currentMonth += direction;
-            if (currentMonth > 12) { currentMonth = 1; currentYear++; }
-            if (currentMonth < 1)  { currentMonth = 12; currentYear--; }
-            const res = await fetch(`/month?year=${currentYear}&month=${currentMonth}`);
-            const data = await res.json();
-            document.getElementById('month-label').textContent = data.month_name;
-            document.getElementById('calendar-grid').innerHTML = data.buttons_html;
-            restoreSelection();
-            loadMonthStatus();
+        function formatCreated(createdStr) {
+            const [y, m, d] = createdStr.split('-').map(Number);
+            const dow = new Date(y, m - 1, d).getDay();
+            return `Created ${DAY_NAMES[dow]}, ${d} ${MONTH_NAMES[m - 1]} ${y}`;
         }
 
         (async function initGreeting() {
@@ -444,61 +344,36 @@ def home():
                 name = prompt("Please enter your first name:");
                 if (name && name.trim()) {
                     name = name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase();
-                    await fetch('/save-name', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name: name })
-                    });
+                    await post('/save-name', { name });
                 }
             }
             if (name) {
                 const hour = new Date().getHours();
                 let greeting;
-                if (hour >= 1 && hour < 12)       greeting = "Good morning, " + name + ".";
-                else if (hour >= 12 && hour < 14)  greeting = "Good day, " + name + ".";
-                else if (hour >= 14 && hour < 18)  greeting = "Good afternoon, " + name + ".";
-                else                               greeting = "Good evening, " + name + ".";
+                if      (hour >= 1  && hour < 12) greeting = `Good morning, ${name}.`;
+                else if (hour >= 12 && hour < 14) greeting = `Good day, ${name}.`;
+                else if (hour >= 14 && hour < 18) greeting = `Good afternoon, ${name}.`;
+                else                              greeting = `Good evening, ${name}.`;
                 document.getElementById('greeting').textContent = greeting;
             }
         })();
 
-        loadMonthStatus();
+        loadTasks();
 
-        function updateDayButton(day, total, done) {
-            const btn = document.getElementById('day-' + day);
-            if (!btn) return;
-            const bar = btn.querySelector('.day-progress-bar');
-            const fill = btn.querySelector('.day-progress-fill');
-            if (total === 0) {
-                bar.style.visibility = 'hidden';
-                btn.style.backgroundColor = 'white';
-                return;
-            }
-            bar.style.visibility = 'visible';
-            fill.style.width = (done / total * 100) + '%';
-            const hour = new Date().getHours();
-            if (done === total) {
-                btn.style.backgroundColor = '#d4f5d4';
-            } else if (done > 0) {
-                btn.style.backgroundColor = '#fff9c4';
-            } else if (hour >= 20) {
-                btn.style.backgroundColor = '#ffd6d6';
-            } else {
-                btn.style.backgroundColor = 'white';
-            }
-        }
+        let selectedColor = '#8BAFD6';
 
-        async function loadMonthStatus() {
-            const res = await fetch(`/month-tasks?year=${currentYear}&month=${currentMonth}`);
-            const data = await res.json();
-            for (const [day, status] of Object.entries(data)) {
-                updateDayButton(parseInt(day), status.total, status.done);
-            }
-        }
+        document.getElementById('colour-swatches').addEventListener('click', function(e) {
+            if (!e.target.classList.contains('swatch')) return;
+            document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+            e.target.classList.add('selected');
+            selectedColor = e.target.dataset.color;
+        });
 
         function openModal() {
             document.getElementById('task-desc').value = '';
-            document.getElementById('task-days').value = '';
+            selectedColor = '#8BAFD6';
+            document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+            document.querySelector('.swatch').classList.add('selected');
             document.getElementById('modal-overlay').classList.add('active');
             document.getElementById('task-desc').focus();
         }
@@ -508,152 +383,203 @@ def home():
         }
 
         function renderTasks(tasks) {
-            const list = document.getElementById('task-list');
-            list.innerHTML = '';
+            const container = document.getElementById('task-cards');
+            container.innerHTML = '';
             tasks.forEach(task => {
-                const dateKey = `${selectedYear}-${selectedMonth}-${selectedDay}`;
-                const checked = task.checked[dateKey] || false;
-                const item = document.createElement('div');
-                item.className = 'task-item';
-                item.innerHTML = `
-                    <input type="checkbox" id="task-${task.id}" ${checked ? 'checked' : ''}
-                        onchange="toggleTask('${task.id}', this.checked)">
-                    <label for="task-${task.id}">${task.desc}</label>
-                    <button class="delete-btn" onclick="deleteTask('${task.id}')" title="Remove task">&#128465;</button>`;
-                list.appendChild(item);
+                const dayNum = getDayNum(task.created);
+                const active = dayNum >= 1 && dayNum <= 60;
+                const [cy, cm, cd] = task.created.split('-').map(Number);
+                const createdDate  = new Date(cy, cm - 1, cd);
+
+                // Grid (built first to capture todayBlock reference)
+                const grid = document.createElement('div');
+                grid.className = 'days-grid';
+                let todayBlock = null;
+                for (let i = 1; i <= 60; i++) {
+                    const blockDate = new Date(createdDate);
+                    blockDate.setDate(blockDate.getDate() + (i - 1));
+
+                    const isChecked = !!task.checked[String(i)];
+                    const btn = document.createElement('button');
+                    btn.className = 'day-btn';
+                    btn.style.background = isChecked ? task.color : lightenColor(task.color, 0.82);
+                    btn.style.color      = isChecked ? 'white' : '#555';
+                    btn.innerHTML = `<span style="font-size:7px;">${MONTH_ABBRS[blockDate.getMonth()]}</span>
+                                     <span style="font-size:11px;font-weight:500;">${blockDate.getDate()}</span>`;
+                    if (i === dayNum && !isChecked) {
+                        btn.style.outline       = `2px solid ${task.color}`;
+                        btn.style.outlineOffset = '-2px';
+                    }
+                    if (i === dayNum) todayBlock = btn;
+                    grid.appendChild(btn);
+                }
+
+                // Tick button
+                const isTicked = active && !!task.checked[String(dayNum)];
+                const tickBtn  = document.createElement('button');
+                tickBtn.className      = 'tick-btn';
+                tickBtn.innerHTML      = TICK_SVG;
+                tickBtn.dataset.ticked = isTicked;
+                tickBtn.style.background = isTicked ? task.color : lightenColor(task.color, 0.82);
+                tickBtn.style.color      = isTicked ? 'white' : '#555';
+                if (!active) {
+                    tickBtn.style.opacity = '0.35';
+                    tickBtn.style.cursor  = 'default';
+                } else {
+                    tickBtn.addEventListener('click', () => toggleTick(task.id, dayNum, tickBtn, task.color, todayBlock));
+                }
+
+                // Title (editable)
+                const titleEl = document.createElement('p');
+                titleEl.className       = 'task-card-title';
+                titleEl.contentEditable = 'true';
+                titleEl.spellcheck      = false;
+                titleEl.textContent     = task.desc;
+                let originalText = task.desc;
+                titleEl.addEventListener('focus', () => { originalText = titleEl.textContent.trim(); });
+                titleEl.addEventListener('keydown', e => {
+                    if (e.key === 'Enter')  { e.preventDefault(); titleEl.blur(); }
+                    if (e.key === 'Escape') { titleEl.textContent = originalText; titleEl.blur(); }
+                });
+                titleEl.addEventListener('blur', async () => {
+                    const newText = titleEl.textContent.trim();
+                    if (!newText) { titleEl.textContent = originalText; return; }
+                    if (newText !== originalText) {
+                        await post('/rename-task', { id: task.id, desc: newText });
+                        originalText = newText;
+                    }
+                });
+
+                const dateEl = document.createElement('p');
+                dateEl.className   = 'task-card-date';
+                dateEl.textContent = formatCreated(task.created);
+
+                const descBlock = document.createElement('div');
+                descBlock.style.flex = '1';
+                descBlock.appendChild(titleEl);
+                descBlock.appendChild(dateEl);
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-btn';
+                deleteBtn.innerHTML = '&#x2715;';
+                deleteBtn.title     = 'Remove task';
+                deleteBtn.onclick   = () => deleteTask(task.id);
+                deleteBtn.addEventListener('mouseenter', () => deleteBtn.style.color = task.color);
+                deleteBtn.addEventListener('mouseleave', () => deleteBtn.style.color = '#555');
+
+                const header = document.createElement('div');
+                header.className = 'task-card-header';
+                header.appendChild(tickBtn);
+                header.appendChild(descBlock);
+                header.appendChild(deleteBtn);
+
+                const card = document.createElement('div');
+                card.className = 'task-card';
+                card.appendChild(header);
+                card.appendChild(document.createElement('hr'));
+                card.appendChild(grid);
+                container.appendChild(card);
             });
         }
 
         async function loadTasks() {
-            if (!selectedDay) return;
-            const res = await fetch(`/get-tasks?year=${selectedYear}&month=${selectedMonth}&day=${selectedDay}`);
+            const res  = await fetch('/get-all-tasks');
             const data = await res.json();
             renderTasks(data.tasks);
         }
 
         async function submitTask() {
             const desc = document.getElementById('task-desc').value.trim();
-            const days = parseInt(document.getElementById('task-days').value) || 1;
             if (!desc) return;
-            await fetch('/save-task', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ desc, days, year: selectedYear, month: selectedMonth, day: selectedDay })
-            });
+            await post('/save-task', { desc, color: selectedColor });
             await loadTasks();
-            loadMonthStatus();
             closeModal();
         }
 
-        async function deleteTask(id) {
-            await fetch('/delete-task', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id })
-            });
-            await loadTasks();
-            loadMonthStatus();
+        function deleteTask(id) {
+            const overlay = document.getElementById('confirm-overlay');
+            overlay.classList.add('active');
+            document.getElementById('confirm-yes').onclick = async () => {
+                overlay.classList.remove('active');
+                await post('/delete-task', { id });
+                await loadTasks();
+            };
         }
 
-        async function toggleTask(id, checked) {
-            const dateKey = `${selectedYear}-${selectedMonth}-${selectedDay}`;
-            await fetch('/toggle-task', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, date: dateKey, checked })
-            });
-            loadMonthStatus();
+        function closeConfirm() {
+            document.getElementById('confirm-overlay').classList.remove('active');
+        }
+
+        async function toggleTick(id, dayNum, tickBtn, color, todayBlock) {
+            const ticked = tickBtn.dataset.ticked !== 'true';
+            tickBtn.dataset.ticked   = ticked;
+            tickBtn.style.background = ticked ? color : lightenColor(color, 0.82);
+            tickBtn.style.color      = ticked ? 'white' : '#555';
+            if (todayBlock) {
+                todayBlock.style.background   = ticked ? color : lightenColor(color, 0.82);
+                todayBlock.style.color        = ticked ? 'white' : '#555';
+                todayBlock.style.outline      = ticked ? 'none' : `2px solid ${color}`;
+                todayBlock.style.outlineOffset = '-2px';
+            }
+            await post('/toggle-task', { id, date: String(dayNum), checked: ticked });
         }
 
         document.getElementById('modal-overlay').addEventListener('click', function(e) {
             if (e.target === this) closeModal();
         });
+        document.getElementById('confirm-overlay').addEventListener('click', function(e) {
+            if (e.target === this) closeConfirm();
+        });
 
         async function quit() {
-            await fetch('/quit', { method: 'POST' });
+            await post('/quit');
             window.close();
         }
     </script>
     """
 
-@app.route("/month-tasks")
-def month_tasks():
-    year = int(request.args.get("year"))
-    month = int(request.args.get("month"))
-    num_days = calendar.monthrange(year, month)[1]
-    config = load_config()
-    tasks = config.get("tasks", [])
-    result = {}
-    for day in range(1, num_days + 1):
-        requested = date(year, month, day)
-        date_key = f"{year}-{month}-{day}"
-        day_tasks = []
-        for task in tasks:
-            sy, sm, sd = (int(x) for x in task["start"].split("-"))
-            start = date(sy, sm, sd)
-            end = date.fromordinal(start.toordinal() + task["days"] - 1)
-            if start <= requested <= end:
-                day_tasks.append(task)
-        total = len(day_tasks)
-        done = sum(1 for t in day_tasks if t["checked"].get(date_key, False))
-        result[str(day)] = {"total": total, "done": done}
-    return jsonify(result)
-
-@app.route("/month")
-def get_month():
-    year = int(request.args.get("year"))
-    month = int(request.args.get("month"))
-    config = load_config()
-    month_name = date(year, month, 1).strftime("%B %Y")
-    buttons_html = build_buttons_html(year, month)
-    return jsonify({"month_name": month_name, "buttons_html": buttons_html})
-
 @app.route("/save-name", methods=["POST"])
 def save_name():
-    data = request.get_json()
+    data   = request.get_json()
     config = load_config()
     config["name"] = data["name"]
     save_config(config)
     return "", 204
 
-
 @app.route("/save-task", methods=["POST"])
 def save_task():
-    data = request.get_json()
+    data   = request.get_json()
     config = load_config()
-    tasks = config.get("tasks", [])
-    import time
-    task = {
-        "id": str(int(time.time() * 1000)),
-        "desc": data["desc"],
-        "days": data["days"],
-        "start": f"{data['year']}-{data['month']}-{data['day']}",
+    today  = date.today()
+    task   = {
+        "id":      str(int(time.time() * 1000)),
+        "desc":    data["desc"],
+        "color":   data.get("color", "#8BAFD6"),
+        "created": f"{today.year}-{today.month}-{today.day}",
         "checked": {}
     }
-    tasks.append(task)
-    config["tasks"] = tasks
+    config.setdefault("tasks", []).append(task)
     save_config(config)
     return "", 204
 
-@app.route("/get-tasks")
-def get_tasks():
-    year = int(request.args.get("year"))
-    month = int(request.args.get("month"))
-    day = int(request.args.get("day"))
-    requested = date(year, month, day)
+@app.route("/get-all-tasks")
+def get_all_tasks():
     config = load_config()
-    result = []
-    for task in config.get("tasks", []):
-        sy, sm, sd = (int(x) for x in task["start"].split("-"))
-        start = date(sy, sm, sd)
-        end = date.fromordinal(start.toordinal() + task["days"] - 1)
-        if start <= requested <= end:
-            result.append(task)
-    return jsonify({"tasks": result})
+    return jsonify({"tasks": config.get("tasks", [])})
+
+@app.route("/rename-task", methods=["POST"])
+def rename_task():
+    data   = request.get_json()
+    config = load_config()
+    task   = find_task(config.get("tasks", []), data["id"])
+    if task:
+        task["desc"] = data["desc"]
+    save_config(config)
+    return "", 204
 
 @app.route("/delete-task", methods=["POST"])
 def delete_task():
-    data = request.get_json()
+    data   = request.get_json()
     config = load_config()
     config["tasks"] = [t for t in config.get("tasks", []) if t["id"] != data["id"]]
     save_config(config)
@@ -661,12 +587,11 @@ def delete_task():
 
 @app.route("/toggle-task", methods=["POST"])
 def toggle_task():
-    data = request.get_json()
+    data   = request.get_json()
     config = load_config()
-    for task in config.get("tasks", []):
-        if task["id"] == data["id"]:
-            task["checked"][data["date"]] = data["checked"]
-            break
+    task   = find_task(config.get("tasks", []), data["id"])
+    if task:
+        task["checked"][data["date"]] = data["checked"]
     save_config(config)
     return "", 204
 
