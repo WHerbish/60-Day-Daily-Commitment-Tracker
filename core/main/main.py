@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-import os, signal, json
+import os, signal, json, time
 from datetime import date
 
 app = Flask(__name__)
@@ -15,6 +15,9 @@ def load_config():
 def save_config(data):
     with open(CONFIG_FILE, "w") as f:
         json.dump(data, f)
+
+def find_task(tasks, task_id):
+    return next((t for t in tasks if t["id"] == task_id), None)
 
 @app.route("/")
 def home():
@@ -46,9 +49,7 @@ def home():
             cursor: pointer;
             padding: 0;
         }
-        #quitBtn:hover {
-            color: #888;
-        }
+        #quitBtn:hover { color: #555; }
         .greeting {
             font-size: 15px;
             color: #777;
@@ -56,7 +57,6 @@ def home():
         }
         .add-row {
             display: flex;
-            flex-direction: row;
             align-items: center;
             gap: 10px;
             margin-bottom: 24px;
@@ -93,7 +93,6 @@ def home():
         }
         .task-cards {
             display: flex;
-            flex-direction: row;
             flex-wrap: wrap;
             justify-content: center;
             align-items: flex-start;
@@ -156,7 +155,6 @@ def home():
             padding: 0;
             line-height: 1;
         }
-        .delete-btn:hover { }
         .task-card hr {
             border: none;
             border-top: 1px solid #e8e8e8;
@@ -239,9 +237,7 @@ def home():
             box-sizing: border-box;
             flex-shrink: 0;
         }
-        .swatch.selected {
-            border: 2px solid #444;
-        }
+        .swatch.selected { border-color: #444; }
         .modal-btns {
             display: flex;
             justify-content: flex-end;
@@ -260,11 +256,6 @@ def home():
             background: #C8A2C8;
             color: white;
             border-color: #C8A2C8;
-        }
-        .modal-btns button.secondary {
-            background: #white;
-            color: black;
-            border-color: #white;
         }
     </style>
     <h1>60-Day Daily Commitment Tracker</h1>
@@ -305,43 +296,24 @@ def home():
             </div>
             <div class="modal-btns">
                 <button class="primary" onclick="submitTask()">Add</button>
-                <button class="secondary" onclick="closeModal()">Cancel</button>
+                <button onclick="closeModal()">Cancel</button>
             </div>
         </div>
     </div>
     <script>
-        (async function initGreeting() {
-            let name = """ + json.dumps(saved_name) + """;
-            if (!name) {
-                name = prompt("Please enter your first name:");
-                if (name && name.trim()) {
-                    name = name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase();
-                    await fetch('/save-name', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name: name })
-                    });
-                }
-            }
-            if (name) {
-                const hour = new Date().getHours();
-                let greeting;
-                if (hour >= 1 && hour < 12)       greeting = "Good morning, " + name + ".";
-                else if (hour >= 12 && hour < 14)  greeting = "Good day, " + name + ".";
-                else if (hour >= 14 && hour < 18)  greeting = "Good afternoon, " + name + ".";
-                else                               greeting = "Good evening, " + name + ".";
-                document.getElementById('greeting').textContent = greeting;
-            }
-        })();
+        const MONTH_ABBRS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        const DAY_NAMES   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        const TICK_SVG    = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polyline points="2.5,8.5 6.5,12.5 13.5,4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>`;
 
-        loadTasks();
-
-        function formatCreated(dateStr) {
-            const [y, m, d] = dateStr.split('-').map(Number);
-            const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-            const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-            const dow = new Date(y, m - 1, d).getDay();
-            return `Created ${days[dow]}, ${d} ${months[m - 1]} ${y}`;
+        async function post(url, body = {}) {
+            await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
         }
 
         function lightenColor(hex, factor) {
@@ -350,6 +322,43 @@ def home():
             const b = parseInt(hex.slice(5,7), 16);
             return `rgb(${Math.round(r+(255-r)*factor)},${Math.round(g+(255-g)*factor)},${Math.round(b+(255-b)*factor)})`;
         }
+
+        function getDayNum(createdStr) {
+            const [y, m, d] = createdStr.split('-').map(Number);
+            const created = new Date(y, m - 1, d);
+            const today   = new Date();
+            today.setHours(0, 0, 0, 0);
+            created.setHours(0, 0, 0, 0);
+            return Math.floor((today - created) / 86400000) + 1;
+        }
+
+        function formatCreated(createdStr) {
+            const [y, m, d] = createdStr.split('-').map(Number);
+            const dow = new Date(y, m - 1, d).getDay();
+            return `Created ${DAY_NAMES[dow]}, ${d} ${MONTH_NAMES[m - 1]} ${y}`;
+        }
+
+        (async function initGreeting() {
+            let name = """ + json.dumps(saved_name) + """;
+            if (!name) {
+                name = prompt("Please enter your first name:");
+                if (name && name.trim()) {
+                    name = name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase();
+                    await post('/save-name', { name });
+                }
+            }
+            if (name) {
+                const hour = new Date().getHours();
+                let greeting;
+                if      (hour >= 1  && hour < 12) greeting = `Good morning, ${name}.`;
+                else if (hour >= 12 && hour < 14) greeting = `Good day, ${name}.`;
+                else if (hour >= 14 && hour < 18) greeting = `Good afternoon, ${name}.`;
+                else                              greeting = `Good evening, ${name}.`;
+                document.getElementById('greeting').textContent = greeting;
+            }
+        })();
+
+        loadTasks();
 
         let selectedColor = '#8BAFD6';
 
@@ -373,51 +382,32 @@ def home():
             document.getElementById('modal-overlay').classList.remove('active');
         }
 
-        function getDayNum(createdStr) {
-            const [y, m, d] = createdStr.split('-').map(Number);
-            const created = new Date(y, m - 1, d);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            created.setHours(0, 0, 0, 0);
-            return Math.floor((today - created) / (1000 * 60 * 60 * 24)) + 1;
-        }
-
-        const tickSVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <polyline points="2.5,8.5 6.5,12.5 13.5,4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>`;
-
         function renderTasks(tasks) {
             const container = document.getElementById('task-cards');
             container.innerHTML = '';
             tasks.forEach(task => {
                 const dayNum = getDayNum(task.created);
                 const active = dayNum >= 1 && dayNum <= 60;
-
-                const card = document.createElement('div');
-                card.className = 'task-card';
-
-                // Build grid first to capture todayBlock reference
-                const monthAbbrs = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                 const [cy, cm, cd] = task.created.split('-').map(Number);
-                const createdDate = new Date(cy, cm - 1, cd);
+                const createdDate  = new Date(cy, cm - 1, cd);
 
+                // Grid (built first to capture todayBlock reference)
                 const grid = document.createElement('div');
                 grid.className = 'days-grid';
                 let todayBlock = null;
                 for (let i = 1; i <= 60; i++) {
                     const blockDate = new Date(createdDate);
                     blockDate.setDate(blockDate.getDate() + (i - 1));
-                    const mon = monthAbbrs[blockDate.getMonth()];
-                    const dom = blockDate.getDate();
 
+                    const isChecked = !!task.checked[String(i)];
                     const btn = document.createElement('button');
                     btn.className = 'day-btn';
-                    const isChecked = !!task.checked[String(i)];
-                    btn.style.background = isChecked ? task.color : lightenColor(task.color, 0.65);
-                    btn.style.color = isChecked ? 'white' : '#555';
-                    btn.innerHTML = `<span style="font-size:7px;">${mon}</span><span style="font-size:11px; font-weight:500;">${dom}</span>`;
+                    btn.style.background = isChecked ? task.color : lightenColor(task.color, 0.82);
+                    btn.style.color      = isChecked ? 'white' : '#555';
+                    btn.innerHTML = `<span style="font-size:7px;">${MONTH_ABBRS[blockDate.getMonth()]}</span>
+                                     <span style="font-size:11px;font-weight:500;">${blockDate.getDate()}</span>`;
                     if (i === dayNum && !isChecked) {
-                        btn.style.outline = `2px solid ${task.color}`;
+                        btn.style.outline       = `2px solid ${task.color}`;
                         btn.style.outlineOffset = '-2px';
                     }
                     if (i === dayNum) todayBlock = btn;
@@ -425,47 +415,44 @@ def home():
                 }
 
                 // Tick button
-                const tickBtn = document.createElement('button');
-                tickBtn.className = 'tick-btn';
-                tickBtn.innerHTML = tickSVG;
                 const isTicked = active && !!task.checked[String(dayNum)];
+                const tickBtn  = document.createElement('button');
+                tickBtn.className      = 'tick-btn';
+                tickBtn.innerHTML      = TICK_SVG;
                 tickBtn.dataset.ticked = isTicked;
-                tickBtn.style.background = isTicked ? task.color : lightenColor(task.color, 0.65);
-                tickBtn.style.color = isTicked ? 'white' : '#555';
+                tickBtn.style.background = isTicked ? task.color : lightenColor(task.color, 0.82);
+                tickBtn.style.color      = isTicked ? 'white' : '#555';
                 if (!active) {
                     tickBtn.style.opacity = '0.35';
-                    tickBtn.style.cursor = 'default';
+                    tickBtn.style.cursor  = 'default';
                 } else {
                     tickBtn.addEventListener('click', () => toggleTick(task.id, dayNum, tickBtn, task.color, todayBlock));
                 }
 
+                // Title (editable)
                 const titleEl = document.createElement('p');
-                titleEl.className = 'task-card-title';
+                titleEl.className       = 'task-card-title';
                 titleEl.contentEditable = 'true';
-                titleEl.spellcheck = false;
-                titleEl.textContent = task.desc;
+                titleEl.spellcheck      = false;
+                titleEl.textContent     = task.desc;
                 let originalText = task.desc;
                 titleEl.addEventListener('focus', () => { originalText = titleEl.textContent.trim(); });
                 titleEl.addEventListener('keydown', e => {
-                    if (e.key === 'Enter') { e.preventDefault(); titleEl.blur(); }
+                    if (e.key === 'Enter')  { e.preventDefault(); titleEl.blur(); }
                     if (e.key === 'Escape') { titleEl.textContent = originalText; titleEl.blur(); }
                 });
                 titleEl.addEventListener('blur', async () => {
                     const newText = titleEl.textContent.trim();
                     if (!newText) { titleEl.textContent = originalText; return; }
                     if (newText !== originalText) {
-                        await fetch('/rename-task', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: task.id, desc: newText })
-                        });
+                        await post('/rename-task', { id: task.id, desc: newText });
                         originalText = newText;
                     }
                 });
 
                 const dateEl = document.createElement('p');
-                dateEl.className = 'task-card-date';
-                dateEl.textContent = task.created ? formatCreated(task.created) : '';
+                dateEl.className   = 'task-card-date';
+                dateEl.textContent = formatCreated(task.created);
 
                 const descBlock = document.createElement('div');
                 descBlock.style.flex = '1';
@@ -475,8 +462,8 @@ def home():
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'delete-btn';
                 deleteBtn.innerHTML = '&#x2715;';
-                deleteBtn.title = 'Remove task';
-                deleteBtn.onclick = () => deleteTask(task.id);
+                deleteBtn.title     = 'Remove task';
+                deleteBtn.onclick   = () => deleteTask(task.id);
                 deleteBtn.addEventListener('mouseenter', () => deleteBtn.style.color = task.color);
                 deleteBtn.addEventListener('mouseleave', () => deleteBtn.style.color = '#555');
 
@@ -486,17 +473,17 @@ def home():
                 header.appendChild(descBlock);
                 header.appendChild(deleteBtn);
 
-                const hr = document.createElement('hr');
-
+                const card = document.createElement('div');
+                card.className = 'task-card';
                 card.appendChild(header);
-                card.appendChild(hr);
+                card.appendChild(document.createElement('hr'));
                 card.appendChild(grid);
                 container.appendChild(card);
             });
         }
 
         async function loadTasks() {
-            const res = await fetch('/get-all-tasks');
+            const res  = await fetch('/get-all-tasks');
             const data = await res.json();
             renderTasks(data.tasks);
         }
@@ -504,11 +491,7 @@ def home():
         async function submitTask() {
             const desc = document.getElementById('task-desc').value.trim();
             if (!desc) return;
-            await fetch('/save-task', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ desc, color: selectedColor })
-            });
+            await post('/save-task', { desc, color: selectedColor });
             await loadTasks();
             closeModal();
         }
@@ -516,14 +499,9 @@ def home():
         function deleteTask(id) {
             const overlay = document.getElementById('confirm-overlay');
             overlay.classList.add('active');
-            const yesBtn = document.getElementById('confirm-yes');
-            yesBtn.onclick = async () => {
+            document.getElementById('confirm-yes').onclick = async () => {
                 overlay.classList.remove('active');
-                await fetch('/delete-task', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id })
-                });
+                await post('/delete-task', { id });
                 await loadTasks();
             };
         }
@@ -532,22 +510,18 @@ def home():
             document.getElementById('confirm-overlay').classList.remove('active');
         }
 
-        async function toggleTick(id, dayNum, btn, color, todayBlock) {
-            const ticked = btn.dataset.ticked !== 'true';
-            btn.dataset.ticked = ticked;
-            btn.style.background = ticked ? color : lightenColor(color, 0.65);
-            btn.style.color = ticked ? 'white' : '#555';
+        async function toggleTick(id, dayNum, tickBtn, color, todayBlock) {
+            const ticked = tickBtn.dataset.ticked !== 'true';
+            tickBtn.dataset.ticked   = ticked;
+            tickBtn.style.background = ticked ? color : lightenColor(color, 0.82);
+            tickBtn.style.color      = ticked ? 'white' : '#555';
             if (todayBlock) {
-                todayBlock.style.background = ticked ? color : lightenColor(color, 0.65);
-                todayBlock.style.color = ticked ? 'white' : '#555';
-                todayBlock.style.outline = ticked ? 'none' : `2px solid ${color}`;
+                todayBlock.style.background   = ticked ? color : lightenColor(color, 0.82);
+                todayBlock.style.color        = ticked ? 'white' : '#555';
+                todayBlock.style.outline      = ticked ? 'none' : `2px solid ${color}`;
                 todayBlock.style.outlineOffset = '-2px';
             }
-            await fetch('/toggle-task', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, date: String(dayNum), checked: ticked })
-            });
+            await post('/toggle-task', { id, date: String(dayNum), checked: ticked });
         }
 
         document.getElementById('modal-overlay').addEventListener('click', function(e) {
@@ -558,7 +532,7 @@ def home():
         });
 
         async function quit() {
-            await fetch('/quit', { method: 'POST' });
+            await post('/quit');
             window.close();
         }
     </script>
@@ -566,7 +540,7 @@ def home():
 
 @app.route("/save-name", methods=["POST"])
 def save_name():
-    data = request.get_json()
+    data   = request.get_json()
     config = load_config()
     config["name"] = data["name"]
     save_config(config)
@@ -574,21 +548,17 @@ def save_name():
 
 @app.route("/save-task", methods=["POST"])
 def save_task():
-    data = request.get_json()
+    data   = request.get_json()
     config = load_config()
-    tasks = config.get("tasks", [])
-    import time
-    today = date.today()
-    task = {
-        "id": str(int(time.time() * 1000)),
-        "desc": data["desc"],
-        "color": data.get("color", "#8BAFD6"),
+    today  = date.today()
+    task   = {
+        "id":      str(int(time.time() * 1000)),
+        "desc":    data["desc"],
+        "color":   data.get("color", "#8BAFD6"),
         "created": f"{today.year}-{today.month}-{today.day}",
-        "ticked": False,
         "checked": {}
     }
-    tasks.append(task)
-    config["tasks"] = tasks
+    config.setdefault("tasks", []).append(task)
     save_config(config)
     return "", 204
 
@@ -597,31 +567,19 @@ def get_all_tasks():
     config = load_config()
     return jsonify({"tasks": config.get("tasks", [])})
 
-@app.route("/tick-task", methods=["POST"])
-def tick_task():
-    data = request.get_json()
-    config = load_config()
-    for task in config.get("tasks", []):
-        if task["id"] == data["id"]:
-            task["ticked"] = data["ticked"]
-            break
-    save_config(config)
-    return "", 204
-
 @app.route("/rename-task", methods=["POST"])
 def rename_task():
-    data = request.get_json()
+    data   = request.get_json()
     config = load_config()
-    for task in config.get("tasks", []):
-        if task["id"] == data["id"]:
-            task["desc"] = data["desc"]
-            break
+    task   = find_task(config.get("tasks", []), data["id"])
+    if task:
+        task["desc"] = data["desc"]
     save_config(config)
     return "", 204
 
 @app.route("/delete-task", methods=["POST"])
 def delete_task():
-    data = request.get_json()
+    data   = request.get_json()
     config = load_config()
     config["tasks"] = [t for t in config.get("tasks", []) if t["id"] != data["id"]]
     save_config(config)
@@ -629,12 +587,11 @@ def delete_task():
 
 @app.route("/toggle-task", methods=["POST"])
 def toggle_task():
-    data = request.get_json()
+    data   = request.get_json()
     config = load_config()
-    for task in config.get("tasks", []):
-        if task["id"] == data["id"]:
-            task["checked"][data["date"]] = data["checked"]
-            break
+    task   = find_task(config.get("tasks", []), data["id"])
+    if task:
+        task["checked"][data["date"]] = data["checked"]
     save_config(config)
     return "", 204
 
