@@ -21,7 +21,7 @@ This project was also built as an experiment in **vibe-coding with [Claude](http
 - Blocks from previous days are permanently locked to their complete/incomplete status, creating an honesty history.
 - Tasks can be renamed (click the title to edit, just like renaming a file on MacOS).
 - Personalised greeting based on time of day upon login.
-- All data stored locally under `core/resources/config.json`. 
+- All data stored locally under `src/resources/config.json`. 
 
 ---
 
@@ -50,7 +50,7 @@ cd 60-Day-Daily-Commitment-Tracker
 2. Run the app:
 
 ```bash
-python core/main/main.py
+python src/main/main.py
 ```
 
 The app can also be ran via the DailyCommitmentTracker.command executable.
@@ -63,13 +63,16 @@ The app can also be ran via the DailyCommitmentTracker.command executable.
 
 ```
 60-Day-Daily-Commitment-Tracker/
-├── core/
+├── src/
 │   ├── main/
 │   │   └── main.py          # Flask app — all routes and UI
 │   └── resources/
 │       └── config.json      # Local data store (git-ignored)
+│       └── colours.png      # Colours used to lable different tasks
 ├── .gitignore
 ├── DailyCommitmentTracker.command
+├── LICENSE
+├── pyproject.toml
 └── README.md
 ```
 
